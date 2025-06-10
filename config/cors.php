@@ -1,7 +1,7 @@
 <?php
 return [
-    'paths' => ['api/*'], // Covers /api/login, /api/captcha/reload, etc.
-'allowed_methods' => ['/*'], // Explicitly include POST
+    'paths' => ['api/*'],
+    'allowed_methods' => ['/*'],
     'allowed_origins' => ['http://localhost:4000'],
     'allowed_origins_patterns' => [],
     'allowed_headers' => ['Content-Type', 'Accept', 'Authorization'], // Include relevant headers

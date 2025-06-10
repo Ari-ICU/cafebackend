@@ -20,9 +20,9 @@ class AuthController extends Controller
             $validator = Validator::make($request->all(), [
                 'email' => 'required|email|exists:users,email|max:255',
                 'password' => 'required|string|min:8|max:255',
-                
+
             ]);
-          
+
             if ($validator->fails()) {
                 Log::warning('Validation error during login', ['errors' => $validator->errors()]);
                 return response()->json([
@@ -49,10 +49,14 @@ class AuthController extends Controller
                 ], 500);
             }
 
+            if (!$token = JWTAuth::attempt($credentials)) {
+                Log::warning('Login failed: Invalid credentials', ['email' => $request->email]);
+                return response()->json(['message' => 'Invalid email or password.'], 401);
+            }
+
             $user = User::whereRaw('LOWER(email) = ?', [strtolower($request->email)])->first();
 
-            Log::info('User logged in', ['email' => $user->email, 'user_id' => $user->id]);
-
+            // Set HTTP-only cookie
             return response()->json([
                 'data' => [
                     'user' => [
@@ -60,10 +64,10 @@ class AuthController extends Controller
                         'email' => $user->email,
                         'name' => $user->name,
                     ],
-                    'token' => $token,
+                    'token' => $token, // Optional: return token in body
                 ],
                 'message' => 'Login successful.',
-            ], 200);
+            ], 200)->cookie('auth_token', $token, 60, null, null, true, true, false, 'Strict');
         } catch (\Exception $e) {
             Log::error('Login error', ['error' => $e->getMessage(), 'email' => $request->email]);
             return response()->json([
@@ -92,7 +96,13 @@ class AuthController extends Controller
     public function me(Request $request): JsonResponse
     {
         try {
-            $user = JWTAuth::user();
+            // Try to get token from cookie or Authorization header
+            $token = $request->cookie('auth_token') ?: $request->bearerToken();
+            if (!$token) {
+                return response()->json(['message' => 'Unauthenticated.'], 401);
+            }
+
+            $user = JWTAuth::setToken($token)->authenticate();
             if (!$user) {
                 return response()->json(['message' => 'Unauthenticated.'], 401);
             }
@@ -111,10 +121,73 @@ class AuthController extends Controller
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
-
             return response()->json(['message' => 'Failed to fetch user data.'], 500);
         }
     }
+    public function refresh(Request $request): JsonResponse
+    {
+        try {
+            // Manually extract token from Authorization header
+            $authHeader = $request->header('Authorization');
+            if (!$authHeader || !str_starts_with($authHeader, 'Bearer ')) {
+                Log::warning('No valid Authorization header provided for token refresh', [
+                    'header' => $authHeader,
+                    'ip' => $request->ip(),
+                ]);
+                return response()->json(['message' => 'Authorization header missing or invalid.'], 401);
+            }
 
+            $token = str_replace('Bearer ', '', $authHeader);
+            if (empty($token)) {
+                Log::warning('Empty token in Authorization header', [
+                    'header' => $authHeader,
+                    'ip' => $request->ip(),
+                ]);
+                return response()->json(['message' => 'Token is empty.'], 401);
+            }
+
+            // Set the token explicitly for JWTAuth
+            JWTAuth::setToken($token);
+
+            // Attempt to refresh the token
+            $newToken = JWTAuth::refresh();
+            $user = JWTAuth::setToken($newToken)->authenticate();
+
+            Log::info('Token refreshed successfully', [
+                'user_id' => $user?->id,
+                'ip' => $request->ip(),
+            ]);
+
+            return response()->json([
+                'data' => ['token' => $newToken],
+                'message' => 'Token refreshed successfully.',
+            ], 200);
+        } catch (TokenExpiredException $e) {
+            Log::error('Token refresh failed: Token expired', [
+                'error' => $e->getMessage(),
+                'ip' => $request->ip(),
+            ]);
+            return response()->json(['message' => 'Token has expired and cannot be refreshed.'], 401);
+        } catch (TokenBlacklistedException $e) {
+            Log::error('Token refresh failed: Token blacklisted', [
+                'error' => $e->getMessage(),
+                'ip' => $request->ip(),
+            ]);
+            return response()->json(['message' => 'Token is blacklisted.'], 401);
+        } catch (TokenInvalidException $e) {
+            Log::error('Token refresh failed: Token invalid', [
+                'error' => $e->getMessage(),
+                'ip' => $request->ip(),
+            ]);
+            return response()->json(['message' => 'Token is invalid.'], 401);
+        } catch (JWTException $e) {
+            Log::error('Token refresh error', [
+                'error' => $e->getMessage(),
+                'ip' => $request->ip(),
+                'stack' => $e->getTraceAsString(),
+            ]);
+            return response()->json(['message' => 'Failed to refresh token.'], 401);
+        }
+    }
 
 }

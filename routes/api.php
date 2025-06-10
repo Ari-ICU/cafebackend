@@ -12,11 +12,11 @@ use App\Http\Controllers\CaptchaController;
 
 Route::post('/login', [AuthController::class, 'login']);
 Route::get('/captcha', [CaptchaController::class, 'reload']);
-
+Route::post('/refresh', [AuthController::class, 'refresh']);
 Route::middleware('auth:api')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
-    
+
     // Product Routes
     Route::get('/products', [ProductController::class, 'index']);
     Route::get('/products/{id}', [ProductController::class, 'show']);

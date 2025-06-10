@@ -43,7 +43,9 @@ return [
     | RS256, RS384 & RS512 / ES256, ES384 & ES512 will use the keys below.
     |
     */
-
+    'ttl' => env('JWT_TTL', 60),
+    'refresh_ttl' => env('JWT_REFRESH_TTL', 20160),
+    'blacklist_enabled' => env('JWT_BLACKLIST_ENABLED', true),
     'keys' => [
 
         /*
